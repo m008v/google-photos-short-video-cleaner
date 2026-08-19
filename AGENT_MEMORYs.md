@@ -30,3 +30,11 @@
 - Chụp `$args` vào `$cleanerArguments` ngay đầu PowerShell rồi dùng duy nhất biến này để kiểm tra và chuyển tiếp `--delete`.
 - Launcher và Python đều in `Chế độ xoá: BẬT/TẮT`; chế độ BẬT nói rõ dry-run toàn bộ là bước bắt buộc trước khi hỏi `MOVE_TO_TRASH`.
 - Tách nhánh kết thúc do tắt xoá khỏi nhánh không có ứng viên để người dùng không còn thấy tool im lặng sau dry-run.
+
+## 2026-08-20 - Thêm CI/CD GitHub Actions
+
+- Người dùng xác nhận luồng quét/xoá chạy thành công và yêu cầu push cùng CI/CD.
+- Thêm workflow test trên Ubuntu/Windows với Python 3.10/3.14; chạy unit test, `py_compile` và self-test launcher Windows giữ cờ `--delete`.
+- Pin action chính thức theo commit: `actions/checkout` v7.0.1 và `actions/setup-python` v7.0.0; CI chỉ có quyền `contents: read`.
+- Tag `vX.Y.Z` sau khi test đạt sẽ đóng gói ZIP, tạo SHA-256 và tạo/cập nhật GitHub Release bằng `gh` với `contents: write` chỉ ở job release.
+- Thêm Dependabot cập nhật GitHub Actions hàng tuần và badge CI/CD trong README.

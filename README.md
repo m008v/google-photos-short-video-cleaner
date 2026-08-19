@@ -1,5 +1,7 @@
 # Google Photos Short Video Cleaner (Selenium + Python)
 
+[![CI/CD](https://github.com/m008v/google-photos-short-video-cleaner/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/m008v/google-photos-short-video-cleaner/actions/workflows/ci-cd.yml)
+
 Tool quét trang **Video** của Google Photos và, sau khi được xác nhận rõ ràng, chuyển các video có badge thời lượng **ngắn hơn 4 giây** vào **Thùng rác**.
 
 ## Cơ chế an toàn
@@ -204,3 +206,19 @@ Tool vẫn điều hướng tới trang Video mặc định. Khi gắn vào Chro
 python -m unittest discover -s tests -v
 python -m py_compile gphotos_short_video_cleaner.py
 ```
+
+## CI/CD và phát hành
+
+GitHub Actions tự chạy unit test và compile trên Ubuntu/Windows với Python 3.10 và
+3.14 cho mọi push lên `main` và pull request. Nhánh Windows còn kiểm tra launcher
+`.bat -> PowerShell -> Python` có giữ đúng cờ `--delete` hay không.
+
+Để tạo GitHub Release kèm ZIP và checksum SHA-256, tạo tag semantic version rồi push:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+Chỉ tag đúng dạng `vX.Y.Z` mới được phát hành. Workflow sử dụng `GITHUB_TOKEN` với
+quyền tối thiểu và không cần cấu hình secret riêng.

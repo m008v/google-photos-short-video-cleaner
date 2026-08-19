@@ -1,11 +1,13 @@
 # Validation record
 
-Ngày kiểm tra: 2026-08-19
+Ngày kiểm tra: 2026-08-20
 
 Đã thực hiện:
 
 - `python -m py_compile gphotos_short_video_cleaner.py`: đạt.
-- `python -m unittest discover -s tests -v`: 14/14 ca đạt.
+- `python -m unittest discover -s tests -v`: 18/18 ca đạt.
+- Launcher Windows giữ đúng `--delete`: self-test báo `Chế độ xoá: BẬT`.
+- Runtime dry-run trên tài khoản thật: 5.169 video, 2.062 ứng viên, 0 video thiếu thời lượng, dừng đúng tại `end-of-gallery` sau 740 vòng cuộn.
 - Mô phỏng DOM bằng Chromium cho các trường hợp:
   - `0:03` được nhận khi ngưỡng là 4.
   - `0:04` bị loại.
@@ -16,4 +18,4 @@ Ngày kiểm tra: 2026-08-19
   - Hộp thoại “Xoá vĩnh viễn” bị từ chối.
   - Nút xoá trùng/không rõ ràng làm tool dừng an toàn.
 
-Chưa thực hiện xoá trên một tài khoản Google Photos thật vì môi trường kiểm tra không có phiên đăng nhập của người dùng. Google có thể thay đổi DOM; phải chạy dry-run và thử `--limit 3` trước khi chạy toàn bộ.
+Người dùng đã xác nhận chế độ xoá chạy thành công trên tài khoản thật. Đây không phải kiểm chứng độc lập phía máy chủ; Google có thể thay đổi DOM nên vẫn phải chạy dry-run và thử `--limit 3` trước khi chạy toàn bộ.

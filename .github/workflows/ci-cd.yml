@@ -1,0 +1,130 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - "v*"
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-cd-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.10", "3.14"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Compile Python source
+        run: python -m py_compile gphotos_short_video_cleaner.py
+
+      - name: Test Windows launcher argument forwarding
+        if: runner.os == 'Windows' && matrix.python-version == '3.14'
+        shell: cmd
+        run: |
+          python -m venv .venv
+          .venv\Scripts\python.exe -m pip install -r requirements.txt
+          run_with_browser_windows.bat --threshold 4 --delete --launcher-self-test
+
+  release:
+    name: Publish tagged release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate semantic version tag
+        shell: bash
+        run: |
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Tag phải có dạng vX.Y.Z, nhận được: $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+
+      - name: Build release archive and checksum
+        shell: bash
+        run: |
+          package_name="google-photos-short-video-cleaner-$GITHUB_REF_NAME"
+          package_dir="$RUNNER_TEMP/$package_name"
+          mkdir -p "$package_dir" dist
+          cp \
+            gphotos_short_video_cleaner.py \
+            requirements.txt \
+            README.md \
+            VALIDATION.md \
+            setup_windows.bat \
+            run_scan_windows.bat \
+            run_delete_test3_windows.bat \
+            run_delete_windows.bat \
+            run_with_browser_windows.bat \
+            run_with_browser_windows.ps1 \
+            "$package_dir/"
+          (
+            cd "$RUNNER_TEMP"
+            zip -r "$GITHUB_WORKSPACE/dist/$package_name.zip" "$package_name"
+          )
+          (
+            cd dist
+            sha256sum "$package_name.zip" > "$package_name.zip.sha256"
+          )
+
+      - name: Create or update GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          package_name="google-photos-short-video-cleaner-$GITHUB_REF_NAME"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" \
+              "dist/$package_name.zip" \
+              "dist/$package_name.zip.sha256" \
+              --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              "dist/$package_name.zip" \
+              "dist/$package_name.zip.sha256" \
+              --verify-tag \
+              --generate-notes \
+              --title "$GITHUB_REF_NAME"
+          fi
