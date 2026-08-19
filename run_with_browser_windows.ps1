@@ -1,5 +1,6 @@
 ﻿$ErrorActionPreference = "Stop"
 
+$cleanerArguments = @($args)
 $scriptDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
 $pythonExecutable = Join-Path $scriptDirectory ".venv\Scripts\python.exe"
 $cleanerScript = Join-Path $scriptDirectory "gphotos_short_video_cleaner.py"
@@ -36,8 +37,11 @@ if (-not $chromeExecutable) {
     exit 1
 }
 
-if ($args -contains "--launcher-self-test") {
+if ($cleanerArguments -contains "--launcher-self-test") {
+    $forwardedArguments = $cleanerArguments | Where-Object { $_ -ne "--launcher-self-test" }
     Write-Host "Kiểm tra launcher thành công: Python và Chrome đều sẵn sàng." -ForegroundColor Green
+    Write-Host "Tham số chuyển tiếp: $($forwardedArguments -join ' ')"
+    Write-Host "Chế độ xoá: $(if ($forwardedArguments -contains '--delete') { 'BẬT' } else { 'TẮT' })"
     exit 0
 }
 
@@ -64,6 +68,7 @@ Write-Host "Đăng nhập Google hoàn toàn trong cửa sổ Chrome vừa mở.
 Write-Host "Chỉ tiếp tục khi trang Google Photos đã hiển thị bình thường."
 Write-Host "Không đóng Chrome trong lúc tool đang chạy."
 Write-Host "Khi tool hoàn tất, hãy đóng cửa sổ Chrome này để tắt cổng debug."
+Write-Host "Chế độ xoá: $(if ($cleanerArguments -contains '--delete') { 'BẬT - sẽ dry-run trước khi hỏi MOVE_TO_TRASH' } else { 'TẮT - chỉ dry-run' })" -ForegroundColor Yellow
 [void](Read-Host "Nhấn Enter để Selenium gắn vào Chrome")
 
 if (-not (Test-DebugEndpoint)) {
@@ -71,5 +76,5 @@ if (-not (Test-DebugEndpoint)) {
     exit 1
 }
 
-& $pythonExecutable $cleanerScript --debugger-address $debugAddress --language vi-VN --close-browser @args
+& $pythonExecutable $cleanerScript --debugger-address $debugAddress --language vi-VN --close-browser @cleanerArguments
 exit $LASTEXITCODE

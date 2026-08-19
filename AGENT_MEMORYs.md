@@ -23,3 +23,10 @@
 - Nhận dạng card cha để đọc 61/61 badge thời lượng, 31 ứng viên dưới 4 giây trong vùng render và 61/61 định danh `photo-href`.
 - Khi tile ảo ban đầu chưa hiện badge, quan sát có thời lượng về sau sẽ thay thế dữ liệu cũ và loại mục khỏi báo cáo thiếu thời lượng.
 - Giữ nguyên trang hiện tại khi gắn Chrome, dùng link Video hiện hành của UI nếu cần và thêm cờ chống throttling nền cho Chrome profile riêng.
+
+## 2026-08-19 - Làm rõ và giữ chắc cờ chế độ xoá qua launcher
+
+- Báo cáo runtime mới nhất quét đủ 5.169 video, tìm 2.062 ứng viên, không thiếu duration nhưng không tạo báo cáo xoá.
+- Chụp `$args` vào `$cleanerArguments` ngay đầu PowerShell rồi dùng duy nhất biến này để kiểm tra và chuyển tiếp `--delete`.
+- Launcher và Python đều in `Chế độ xoá: BẬT/TẮT`; chế độ BẬT nói rõ dry-run toàn bộ là bước bắt buộc trước khi hỏi `MOVE_TO_TRASH`.
+- Tách nhánh kết thúc do tắt xoá khỏi nhánh không có ứng viên để người dùng không còn thấy tool im lặng sau dry-run.

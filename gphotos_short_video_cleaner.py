@@ -1340,6 +1340,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     output_dir = Path(args.output_dir).expanduser().resolve()
 
+    if args.delete:
+        print(
+            "CHẾ ĐỘ XOÁ: ĐÃ BẬT. Tool bắt buộc dry-run toàn bộ trước; "
+            f"sau đó sẽ hỏi nhập {CONFIRM_PHRASE}."
+        )
+    else:
+        print("CHẾ ĐỘ XOÁ: TẮT. Phiên này chỉ dry-run, không nhấp chọn hoặc xoá.")
+
     driver: WebDriver | None = None
     attached = bool(args.debugger_address)
     try:
@@ -1363,7 +1371,11 @@ def main(argv: list[str] | None = None) -> int:
             "Lưu ý: tool dùng số giây hiển thị trên thumbnail. Với ngưỡng 4, chỉ badge 0:00–0:03 được nhận."
         )
 
-        if not args.delete or not scan.candidates:
+        if not args.delete:
+            print("Chế độ xoá đang tắt; kết thúc sau dry-run.")
+            return 0
+        if not scan.candidates:
+            print("Không có video dưới ngưỡng; không có mục nào để chuyển vào Thùng rác.")
             return 0
 
         # A label alone can collide across multiple tiles. Such rows stay in the

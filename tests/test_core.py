@@ -36,6 +36,13 @@ class NormalizeTests(unittest.TestCase):
         self.assertEqual(cleaner.normalize_text("Đóng"), "dong")
 
 
+class ArgumentTests(unittest.TestCase):
+    def test_delete_flag_is_enabled(self):
+        args = cleaner.parse_args(["--threshold", "4", "--delete"])
+        self.assertTrue(args.delete)
+        self.assertEqual(args.threshold, 4)
+
+
 class DedupeTests(unittest.TestCase):
     def test_identity_dedupe(self):
         first = cleaner.MediaItem("k", "photo-href", "Video - now", "0:03", 3)

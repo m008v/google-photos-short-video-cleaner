@@ -122,6 +122,10 @@ Tool luôn dry-run trước, sau đó hiển thị số lượng và yêu cầu 
 MOVE_TO_TRASH
 ```
 
+Ngay khi khởi động, terminal phải hiện `Chế độ xoá: BẬT`. Dòng
+`Bắt đầu dry-run: chỉ đọc DOM, không nhấp chọn hoặc xoá` chỉ mô tả giai đoạn quét an
+toàn bắt buộc; sau khi quét hết thư viện, tool mới yêu cầu nhập `MOVE_TO_TRASH`.
+
 ## Chuyển toàn bộ video khớp vào Thùng rác
 
 Sau khi kiểm tra dry-run và phiên thử 3 mục:
