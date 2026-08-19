@@ -6,6 +6,8 @@ Tool quét trang **Video** của Google Photos và, sau khi được xác nhận
 
 - Mặc định chỉ **dry-run**: không chọn, không xoá; xuất CSV và JSON để kiểm tra trước.
 - Chỉ nhận tile được Google Photos phân loại là **Video** và có badge thời lượng dạng `m:ss` hoặc `h:mm:ss`.
+- Tự tìm vùng cuộn ảo từ tổ tiên của tile thay vì phụ thuộc hoàn toàn vào class do Google sinh ngẫu nhiên.
+- Đọc thời lượng trong toàn bộ card video và dùng URL `/photo/` làm định danh ưu tiên để tránh bỏ sót hoặc gộp nhầm tile.
 - So sánh nghiêm ngặt `< 4`: badge `0:03` được nhận; `0:04` không được nhận.
 - Chế độ xoá chỉ dùng **allow-list đúng từ dry-run vừa hoàn tất**; video mới xuất hiện sau bước xác nhận không tự động được thêm.
 - Tile chỉ có `aria-label` nhưng không có URL/ID/ảnh làm định danh sẽ được ghi vào báo cáo nhưng không được xoá.
@@ -64,17 +66,43 @@ python -m pip install -r requirements.txt
 
 ## Chạy dry-run
 
-```bash
-python gphotos_short_video_cleaner.py --threshold 4
-```
+### Windows (khuyến nghị)
 
-Chrome mở bằng một profile riêng. Đăng nhập thủ công, bảo đảm đang ở **Google Photos > Tìm kiếm > Video**, bỏ chọn mọi mục đang được chọn, rồi nhấn Enter trong terminal. Báo cáo nằm trong thư mục `reports/`.
-
-Windows có thể chạy trực tiếp:
+Chạy:
 
 ```bat
 run_scan_windows.bat
 ```
+
+File `.bat` gọi launcher PowerShell để tránh lỗi mã hóa của `cmd.exe`, sau đó mở một cửa
+sổ Chrome thường bằng profile riêng. Hãy đăng nhập Google và chờ
+Google Photos hiển thị bình thường, sau đó quay lại terminal nhấn phím bất kỳ. Selenium
+chỉ gắn vào Chrome **sau khi đăng nhập**, tránh lỗi Google chặn trình duyệt do nhận diện
+đăng nhập đang được điều khiển bằng phần mềm tự động hóa.
+
+Không đóng cửa sổ Chrome trong lúc quét; đóng nó sau khi tool hoàn tất để tắt cổng debug.
+Profile đăng nhập được giữ tại
+`%USERPROFILE%\.gphotos-short-video-cleaner\chrome-login-profile` để những lần sau không
+phải đăng nhập lại. Tool không đọc hoặc lưu mật khẩu Google.
+
+Launcher tắt cơ chế ngủ nền của Chrome cho profile riêng này để lazy-load tiếp tục hoạt
+động khi tool đang tự cuộn. Nếu muốn kiểm tra launcher mà không mở Chrome hoặc quét:
+
+```bat
+run_with_browser_windows.bat --launcher-self-test
+```
+
+### Dòng lệnh Python
+
+```bash
+python gphotos_short_video_cleaner.py --threshold 4
+```
+
+Lệnh trực tiếp này mở Chrome bằng WebDriver. Chỉ dùng khi profile đã đăng nhập sẵn hoặc
+Google vẫn chấp nhận phiên đăng nhập; nếu gặp cảnh báo trình duyệt không an toàn, dùng
+workflow Windows ở trên hoặc cách gắn Chrome bên dưới. Bảo đảm đang ở **Google Photos >
+Tìm kiếm > Video**, bỏ chọn mọi mục đang được chọn, rồi nhấn Enter trong terminal. Báo
+cáo nằm trong thư mục `reports/`.
 
 ## Thử xoá 3 video trước
 
@@ -118,17 +146,22 @@ python gphotos_short_video_cleaner.py --threshold 4 --delete --confirm MOVE_TO_T
 
 ## Gắn vào Chrome đã mở sẵn
 
-Dùng khi Google không cho đăng nhập trong cửa sổ WebDriver. Phải mở Chrome bằng **profile riêng**, không dùng profile Chrome mặc định đang chạy.
+Dùng khi chạy thủ công thay vì các file `.bat` trên Windows. Google có thể chặn đăng
+nhập trong cửa sổ do WebDriver khởi động vì phát hiện trình duyệt đang được điều khiển
+bằng phần mềm tự động hóa. Phải đăng nhập trong Chrome thường **trước**, sau đó mới gắn
+Selenium vào. Luôn dùng **profile riêng**, không dùng profile Chrome mặc định đang chạy.
 
 Windows, ví dụ:
 
 ```bat
 "C:\Program Files\Google\Chrome\Application\chrome.exe" ^
+  --remote-debugging-address=127.0.0.1 ^
   --remote-debugging-port=9222 ^
-  --user-data-dir="%USERPROFILE%\gphotos-debug-profile"
+  --user-data-dir="%USERPROFILE%\gphotos-debug-profile" ^
+  "https://photos.google.com/"
 ```
 
-Sau khi đăng nhập:
+Chờ đăng nhập thành công và Google Photos hiển thị bình thường, sau đó mới chạy:
 
 ```bash
 python gphotos_short_video_cleaner.py --debugger-address 127.0.0.1:9222 --no-ready-prompt

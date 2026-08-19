@@ -55,7 +55,7 @@ except ImportError as exc:  # pragma: no cover - handled when a browser session 
 
 
 APP_NAME = "Google Photos Short Video Cleaner"
-DEFAULT_START_URL = "https://photos.google.com/search/_tv_Videos"
+DEFAULT_START_URL = "https://photos.google.com/"
 CONFIRM_PHRASE = "MOVE_TO_TRASH"
 LOGGER = logging.getLogger("gphotos-cleaner")
 
@@ -128,9 +128,72 @@ class RuntimeConfig:
     action_timeout_seconds: float
 
 
-# This script is injected only to inspect the visible, already-rendered DOM.
-# It does not call internal Google APIs and does not access media bytes.
-SNAPSHOT_JS = r"""
+# This helper follows the media checkboxes up to their actual scrollable
+# ancestor. Google Photos changes generated class names frequently, so relying
+# only on a hard-coded container class makes the gallery look one-page long.
+_SCROLL_TARGET_HELPER_JS = r"""
+function findScrollTarget() {
+  const checkboxSelector = '.ckGgle[aria-checked], [role="checkbox"][aria-checked], [data-lat][aria-checked]';
+  const preferredSelectors = [
+    '.yDSiEe.uGCjIb.zcLWac.eejsDc.TWmIyd',
+    '.yDSiEe.uGCjIb.zcLWac',
+    '[class~="zcLWac"][class~="eejsDc"]',
+    '[role="main"]',
+    '[role="list"]',
+    '[role="grid"]'
+  ];
+  const candidates = [];
+  const seen = new Set();
+
+  function addCandidate(element, name) {
+    if (!element || seen.has(element) || !element.isConnected) return;
+    seen.add(element);
+    if (element.scrollHeight <= element.clientHeight + 1 || element.clientHeight <= 0) return;
+    const rect = element.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const style = window.getComputedStyle(element);
+    const scrollableStyle = /^(auto|scroll|overlay)$/.test(style.overflowY) ? 1 : 0;
+    candidates.push({
+      element,
+      name,
+      tiles: element.querySelectorAll(checkboxSelector).length,
+      scrollableStyle,
+      overflow: element.scrollHeight - element.clientHeight
+    });
+  }
+
+  for (const selector of preferredSelectors) {
+    for (const element of document.querySelectorAll(selector)) {
+      addCandidate(element, selector);
+    }
+  }
+
+  // The rendered tile is the most stable landmark in Google Photos. Walking
+  // through its ancestors finds the virtualized scroller even after classes
+  // change, as long as the gallery remains selectable.
+  for (const checkbox of document.querySelectorAll(checkboxSelector)) {
+    let ancestor = checkbox.parentElement;
+    for (let depth = 0; ancestor && depth < 16; depth += 1, ancestor = ancestor.parentElement) {
+      addCandidate(ancestor, `checkbox-ancestor-${depth}`);
+    }
+  }
+
+  const doc = document.scrollingElement || document.documentElement;
+  addCandidate(doc, 'document.scrollingElement');
+  candidates.sort((a, b) =>
+    (b.tiles - a.tiles) ||
+    (b.scrollableStyle - a.scrollableStyle) ||
+    (b.overflow - a.overflow)
+  );
+  if (candidates.length > 0) return candidates[0];
+  return doc ? { element: doc, name: 'document.scrollingElement', overflow: 0 } : null;
+}
+"""
+
+
+# This script is injected only to inspect the already-rendered DOM. It does
+# not call internal Google APIs and does not access media bytes.
+SNAPSHOT_JS = _SCROLL_TARGET_HELPER_JS + r"""
 const threshold = Number(arguments[0]);
 const includeChecked = Boolean(arguments[1]);
 const includeElements = Boolean(arguments[2]);
@@ -206,11 +269,20 @@ function isVideoLabel(label) {
   });
 }
 
+function findMediaTile(checkbox) {
+  let node = checkbox.parentElement;
+  for (let depth = 0; node && depth < 8; depth += 1, node = node.parentElement) {
+    const anchor = node.querySelector('a[href*="/photo/"]');
+    if (anchor && countTileCheckboxes(node) <= 1) return node;
+  }
+  return checkbox.parentElement || checkbox;
+}
+
 function findLabelledTile(checkbox) {
   let node = checkbox;
   for (let depth = 0; node && depth < 12; depth += 1, node = node.parentElement) {
     const label = node.getAttribute && node.getAttribute('aria-label');
-    if (label && isVideoLabel(label)) return { tile: node, label };
+    if (label && isVideoLabel(label)) return { tile: findMediaTile(checkbox), label };
   }
   return null;
 }
@@ -225,7 +297,7 @@ function collectDurationBadges(scope, tile) {
     const seconds = parseDuration(raw);
     if (seconds === null) continue;
     const parent = textNode.parentElement;
-    if (!isVisible(parent, true)) continue;
+    if (!isVisible(parent)) continue;
     const rect = parent.getBoundingClientRect();
     // Duration badges are compact and rendered inside the thumbnail tile.
     if (rect.width > 220 || rect.height > 90) continue;
@@ -278,36 +350,6 @@ function itemKey(tile, label) {
   return { key: label, source: 'aria-label' };
 }
 
-function findScrollTarget() {
-  const selectorOrder = [
-    '.yDSiEe.uGCjIb.zcLWac.eejsDc.TWmIyd',
-    '.yDSiEe.uGCjIb.zcLWac',
-    '[role="main"]',
-    '[role="list"]',
-    '[role="grid"]'
-  ];
-  const candidates = [];
-  const seen = new Set();
-  for (const selector of selectorOrder) {
-    for (const element of document.querySelectorAll(selector)) {
-      if (seen.has(element)) continue;
-      seen.add(element);
-      if (element.scrollHeight > element.clientHeight + 1) {
-        const tiles = element.querySelectorAll('.ckGgle[aria-checked], [role="checkbox"][aria-checked], [data-lat][aria-checked]').length;
-        candidates.push({ element, name: selector, tiles, overflow: element.scrollHeight - element.clientHeight });
-      }
-    }
-  }
-  const doc = document.scrollingElement || document.documentElement;
-  if (doc && doc.scrollHeight > doc.clientHeight + 1 && !seen.has(doc)) {
-    const tiles = doc.querySelectorAll('.ckGgle[aria-checked], [role="checkbox"][aria-checked], [data-lat][aria-checked]').length;
-    candidates.push({ element: doc, name: 'document.scrollingElement', tiles, overflow: doc.scrollHeight - doc.clientHeight });
-  }
-  candidates.sort((a, b) => (b.tiles - a.tiles) || (b.overflow - a.overflow));
-  if (candidates.length > 0) return candidates[0];
-  return doc ? { element: doc, name: 'document.scrollingElement', overflow: 0 } : null;
-}
-
 const selectors = includeChecked ? uncheckedSelectors.concat(checkedSelectors) : uncheckedSelectors;
 const checkboxes = queryUnique(selectors);
 const items = [];
@@ -355,35 +397,7 @@ return {
 };
 """
 
-GET_SCROLL_STATE_JS = r"""
-function findScrollTarget() {
-  const selectors = [
-    '.yDSiEe.uGCjIb.zcLWac.eejsDc.TWmIyd',
-    '.yDSiEe.uGCjIb.zcLWac',
-    '[role="main"]',
-    '[role="list"]',
-    '[role="grid"]'
-  ];
-  const candidates = [];
-  const seen = new Set();
-  for (const selector of selectors) {
-    for (const element of document.querySelectorAll(selector)) {
-      if (seen.has(element)) continue;
-      seen.add(element);
-      if (element.scrollHeight > element.clientHeight + 1) {
-        const tiles = element.querySelectorAll('.ckGgle[aria-checked], [role="checkbox"][aria-checked], [data-lat][aria-checked]').length;
-        candidates.push({ element, name: selector, tiles, overflow: element.scrollHeight - element.clientHeight });
-      }
-    }
-  }
-  const doc = document.scrollingElement || document.documentElement;
-  if (doc && doc.scrollHeight > doc.clientHeight + 1 && !seen.has(doc)) {
-    const tiles = doc.querySelectorAll('.ckGgle[aria-checked], [role="checkbox"][aria-checked], [data-lat][aria-checked]').length;
-    candidates.push({ element: doc, name: 'document.scrollingElement', tiles, overflow: doc.scrollHeight - doc.clientHeight });
-  }
-  candidates.sort((a, b) => (b.tiles - a.tiles) || (b.overflow - a.overflow));
-  return candidates[0] || (doc ? { element: doc, name: 'document.scrollingElement' } : null);
-}
+GET_SCROLL_STATE_JS = _SCROLL_TARGET_HELPER_JS + r"""
 const target = findScrollTarget();
 if (!target) return { name: 'none', top: 0, height: 0, client: 0, at_bottom: true };
 const e = target.element;
@@ -396,51 +410,17 @@ return {
 };
 """
 
-SCROLL_TO_TOP_JS = r"""
-const selectors = [
-  '.yDSiEe.uGCjIb.zcLWac.eejsDc.TWmIyd',
-  '.yDSiEe.uGCjIb.zcLWac',
-  '[role="main"]', '[role="list"]', '[role="grid"]'
-];
-const candidates = [];
-const seen = new Set();
-for (const selector of selectors) {
-  for (const e of document.querySelectorAll(selector)) {
-    if (seen.has(e)) continue;
-    seen.add(e);
-    if (e.scrollHeight > e.clientHeight + 1) { const tiles=e.querySelectorAll('.ckGgle[aria-checked], [role="checkbox"][aria-checked], [data-lat][aria-checked]').length; candidates.push({e, tiles, overflow:e.scrollHeight-e.clientHeight}); }
-  }
-}
-const doc = document.scrollingElement || document.documentElement;
-if (doc && !seen.has(doc)) { const tiles=doc.querySelectorAll('.ckGgle[aria-checked], [role="checkbox"][aria-checked], [data-lat][aria-checked]').length; candidates.push({e:doc, tiles, overflow:Math.max(0, doc.scrollHeight-doc.clientHeight)}); }
-candidates.sort((a,b) => (b.tiles-a.tiles) || (b.overflow-a.overflow));
-const target = candidates[0] ? candidates[0].e : doc;
-if (target) target.scrollTo({top:0, left:0, behavior:'auto'});
+SCROLL_TO_TOP_JS = _SCROLL_TARGET_HELPER_JS + r"""
+const target = findScrollTarget();
+if (target) target.element.scrollTo({top: 0, left: 0, behavior: 'auto'});
 return Boolean(target);
 """
 
-SCROLL_BY_JS = r"""
+SCROLL_BY_JS = _SCROLL_TARGET_HELPER_JS + r"""
 const step = Number(arguments[0]);
-const selectors = [
-  '.yDSiEe.uGCjIb.zcLWac.eejsDc.TWmIyd',
-  '.yDSiEe.uGCjIb.zcLWac',
-  '[role="main"]', '[role="list"]', '[role="grid"]'
-];
-const candidates = [];
-const seen = new Set();
-for (const selector of selectors) {
-  for (const e of document.querySelectorAll(selector)) {
-    if (seen.has(e)) continue;
-    seen.add(e);
-    if (e.scrollHeight > e.clientHeight + 1) { const tiles=e.querySelectorAll('.ckGgle[aria-checked], [role="checkbox"][aria-checked], [data-lat][aria-checked]').length; candidates.push({e, tiles, overflow:e.scrollHeight-e.clientHeight}); }
-  }
-}
-const doc = document.scrollingElement || document.documentElement;
-if (doc && !seen.has(doc)) { const tiles=doc.querySelectorAll('.ckGgle[aria-checked], [role="checkbox"][aria-checked], [data-lat][aria-checked]').length; candidates.push({e:doc, tiles, overflow:Math.max(0, doc.scrollHeight-doc.clientHeight)}); }
-candidates.sort((a,b) => (b.tiles-a.tiles) || (b.overflow-a.overflow));
-const target = candidates[0] ? candidates[0].e : doc;
+const target = findScrollTarget();
 if (!target) return false;
-target.scrollBy({top:step, left:0, behavior:'auto'});
+target.element.scrollBy({top: step, left: 0, behavior: 'auto'});
 return true;
 """
 
@@ -609,6 +589,38 @@ function visible(e) {
 return [...document.querySelectorAll('[role="dialog"], [role="alertdialog"], [aria-modal="true"]')].some(visible);
 """
 
+VIDEO_TILE_COUNT_JS = r"""
+const tokens = ['video', 'vidéo', '動画', '视频', '影片', '비디오'];
+function normalizeText(value) {
+  return String(value || '').toLowerCase().replace(/đ/g, 'd').normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '').normalize('NFC').replace(/\s+/g, ' ').trim();
+}
+let count = 0;
+const seen = new Set();
+for (const element of document.querySelectorAll('.ckGgle[aria-checked], [role="checkbox"][aria-checked], [data-lat][aria-checked]')) {
+  if (seen.has(element)) continue;
+  seen.add(element);
+  const label = normalizeText(element.getAttribute('aria-label'));
+  if (tokens.some(token => label === normalizeText(token) || label.startsWith(normalizeText(token) + ' ') || label.startsWith(normalizeText(token) + ' -'))) {
+    count += 1;
+  }
+}
+return count;
+"""
+
+FIND_VIDEO_NAV_ELEMENT_JS = r"""
+const tokens = ['video', 'videos', 'vidéo', 'vidéos', '動画', '视频', '影片', '비디오'];
+function normalizeText(value) {
+  return String(value || '').toLowerCase().replace(/đ/g, 'd').normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '').normalize('NFC').replace(/\s+/g, ' ').trim();
+}
+for (const anchor of document.querySelectorAll('a[href]')) {
+  const label = normalizeText(anchor.getAttribute('aria-label') || anchor.textContent);
+  if (tokens.some(token => label === normalizeText(token))) return anchor;
+}
+return null;
+"""
+
 
 _DURATION_RE = re.compile(r"^\d{1,3}:[0-5]\d(?::[0-5]\d)?$")
 
@@ -645,6 +657,29 @@ def _dedupe_items(items: Iterable[MediaItem]) -> list[MediaItem]:
     for item in items:
         out.setdefault(item.identity, item)
     return list(out.values())
+
+
+def _record_scan_item(
+    item: MediaItem,
+    threshold_seconds: float,
+    all_seen: dict[str, MediaItem],
+    candidate_seen: dict[str, MediaItem],
+    no_duration_seen: dict[str, MediaItem],
+) -> None:
+    """Keep the strongest observation as virtualized tiles enter the viewport."""
+    identity = item.identity
+    previous = all_seen.get(identity)
+    if previous is None or (previous.duration_seconds is None and item.duration_seconds is not None):
+        all_seen[identity] = item
+
+    if item.duration_seconds is None:
+        if all_seen[identity].duration_seconds is None:
+            no_duration_seen.setdefault(identity, item)
+        return
+
+    no_duration_seen.pop(identity, None)
+    if item.duration_seconds < threshold_seconds:
+        candidate_seen.setdefault(identity, item)
 
 
 def assert_safe_page_context(driver: WebDriver) -> None:
@@ -760,11 +795,13 @@ def scan_gallery(driver: WebDriver, config: RuntimeConfig) -> ScanResult:
         raw_items = snapshot.get("items") or []
         for raw in raw_items:
             item = _to_media_item(raw)
-            all_seen.setdefault(item.identity, item)
-            if item.duration_seconds is None:
-                no_duration_seen.setdefault(item.identity, item)
-            elif item.duration_seconds < config.threshold_seconds:
-                candidate_seen.setdefault(item.identity, item)
+            _record_scan_item(
+                item,
+                config.threshold_seconds,
+                all_seen,
+                candidate_seen,
+                no_duration_seen,
+            )
 
         state = snapshot.get("scroll") or get_scroll_state(driver)
         if iterations == 1 and int((snapshot.get("stats") or {}).get("video_tiles") or 0) == 0:
@@ -795,11 +832,13 @@ def scan_gallery(driver: WebDriver, config: RuntimeConfig) -> ScanResult:
             )
             for raw in settle_snapshot.get("items") or []:
                 item = _to_media_item(raw)
-                all_seen.setdefault(item.identity, item)
-                if item.duration_seconds is None:
-                    no_duration_seen.setdefault(item.identity, item)
-                elif item.duration_seconds < config.threshold_seconds:
-                    candidate_seen.setdefault(item.identity, item)
+                _record_scan_item(
+                    item,
+                    config.threshold_seconds,
+                    all_seen,
+                    candidate_seen,
+                    no_duration_seen,
+                )
             settle_state = settle_snapshot.get("scroll") or get_scroll_state(driver)
             if len(all_seen) == before_count and float(settle_state.get("height") or 0) <= before_height + 1:
                 stable_bottom_rounds += 1
@@ -1170,6 +1209,9 @@ def build_driver(args: argparse.Namespace) -> WebDriver:
         options.add_argument(f"--user-data-dir={profile_dir}")
         options.add_argument("--start-maximized")
         options.add_argument("--disable-notifications")
+        options.add_argument("--disable-background-timer-throttling")
+        options.add_argument("--disable-backgrounding-occluded-windows")
+        options.add_argument("--disable-renderer-backgrounding")
         if args.language:
             options.add_argument(f"--lang={args.language}")
 
@@ -1182,11 +1224,52 @@ def build_driver(args: argparse.Namespace) -> WebDriver:
         ) from exc
 
 
-def prompt_ready(driver: WebDriver, start_url: str, no_ready_prompt: bool) -> None:
+def _video_tile_count(driver: WebDriver) -> int:
+    return int(driver.execute_script(VIDEO_TILE_COUNT_JS) or 0)
+
+
+def _open_video_gallery_from_navigation(driver: WebDriver, timeout_seconds: float = 15) -> bool:
+    """Use Google Photos' current Video navigation URL instead of a stale hard-coded route."""
+    if _video_tile_count(driver) > 0:
+        return True
+
+    nav_element = driver.execute_script(FIND_VIDEO_NAV_ELEMENT_JS)
+    if nav_element is None:
+        return False
+    nav_url = str(nav_element.get_attribute("href") or "")
+    parsed = urlparse(nav_url)
+    if parsed.hostname != "photos.google.com" or not parsed.path.lower().startswith("/search/"):
+        return False
+
+    LOGGER.info("Mở mục Video bằng liên kết điều hướng hiện tại của Google Photos.")
+    driver.execute_script("arguments[0].click();", nav_element)
+    try:
+        WebDriverWait(driver, timeout_seconds, poll_frequency=0.25).until(
+            lambda current_driver: _video_tile_count(current_driver) > 0
+        )
+    except TimeoutException:
+        LOGGER.warning("Mục Video đã mở nhưng chưa thấy tile nào sau %.0f giây.", timeout_seconds)
+        return False
+    return True
+
+
+def prompt_ready(
+    driver: WebDriver,
+    start_url: str,
+    no_ready_prompt: bool,
+    *,
+    attached: bool,
+) -> None:
     if not start_url.startswith("https://photos.google.com/"):
         raise CleanerError("--start-url phải thuộc https://photos.google.com/")
-    driver.get(start_url)
+
+    # An attached Chrome was opened and authenticated by the user. Preserve its
+    # current page; forcing an old search URL here can replace a working gallery
+    # with an empty search route.
+    if not attached:
+        driver.get(start_url)
     if no_ready_prompt:
+        _open_video_gallery_from_navigation(driver)
         return
     print(
         "\nChrome đã mở. Thực hiện trong cửa sổ đó:\n"
@@ -1196,6 +1279,7 @@ def prompt_ready(driver: WebDriver, start_url: str, no_ready_prompt: bool) -> No
         "  4. Không mở Thùng rác hoặc một album chia sẻ.\n"
     )
     input("Khi lưới Video đã hiển thị, nhấn Enter tại đây để bắt đầu dry-run... ")
+    _open_video_gallery_from_navigation(driver)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -1260,7 +1344,7 @@ def main(argv: list[str] | None = None) -> int:
     attached = bool(args.debugger_address)
     try:
         driver = build_driver(args)
-        prompt_ready(driver, args.start_url, args.no_ready_prompt)
+        prompt_ready(driver, args.start_url, args.no_ready_prompt, attached=attached)
         assert_safe_page_context(driver)
 
         scan = scan_gallery(driver, config)

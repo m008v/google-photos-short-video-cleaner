@@ -43,6 +43,36 @@ class DedupeTests(unittest.TestCase):
         self.assertEqual(cleaner._dedupe_items([first, same_media_new_label]), [first])
 
 
+class ScanObservationTests(unittest.TestCase):
+    def test_visible_duration_replaces_earlier_unresolved_observation(self):
+        unresolved = cleaner.MediaItem("same", "photo-href", "Video", None, None)
+        resolved = cleaner.MediaItem("same", "photo-href", "Video", "0:03", 3)
+        all_seen = {}
+        candidates = {}
+        without_duration = {}
+
+        cleaner._record_scan_item(unresolved, 4, all_seen, candidates, without_duration)
+        cleaner._record_scan_item(resolved, 4, all_seen, candidates, without_duration)
+
+        self.assertEqual(all_seen[resolved.identity], resolved)
+        self.assertEqual(candidates[resolved.identity], resolved)
+        self.assertNotIn(resolved.identity, without_duration)
+
+    def test_resolved_long_video_is_not_reported_without_duration(self):
+        unresolved = cleaner.MediaItem("same", "photo-href", "Video", None, None)
+        resolved = cleaner.MediaItem("same", "photo-href", "Video", "0:10", 10)
+        all_seen = {}
+        candidates = {}
+        without_duration = {}
+
+        cleaner._record_scan_item(unresolved, 4, all_seen, candidates, without_duration)
+        cleaner._record_scan_item(resolved, 4, all_seen, candidates, without_duration)
+
+        self.assertEqual(all_seen[resolved.identity], resolved)
+        self.assertEqual(candidates, {})
+        self.assertNotIn(resolved.identity, without_duration)
+
+
 class PageContextTests(unittest.TestCase):
     class Driver:
         def __init__(self, url):
@@ -77,6 +107,74 @@ class FakeWait:
         if not predicate(self.driver):
             return True
         raise cleaner.TimeoutException()
+
+
+class ScanGalleryTests(unittest.TestCase):
+    def test_scan_scrolls_all_pages_and_upgrades_duration_observations(self):
+        pages = [
+            {
+                "items": [
+                    {"key": "A", "key_source": "photo-href", "label": "Video A", "duration_text": None, "duration_seconds": None},
+                    {"key": "B", "key_source": "photo-href", "label": "Video B", "duration_text": "0:10", "duration_seconds": 10},
+                ],
+                "scroll": {"top": 0, "height": 3000, "client": 800, "at_bottom": False},
+                "stats": {"video_tiles": 2},
+            },
+            {
+                "items": [
+                    {"key": "A", "key_source": "photo-href", "label": "Video A", "duration_text": "0:03", "duration_seconds": 3},
+                    {"key": "C", "key_source": "photo-href", "label": "Video C", "duration_text": "0:02", "duration_seconds": 2},
+                ],
+                "scroll": {"top": 800, "height": 3000, "client": 800, "at_bottom": False},
+                "stats": {"video_tiles": 2},
+            },
+            {
+                "items": [
+                    {"key": "D", "key_source": "photo-href", "label": "Video D", "duration_text": "0:05", "duration_seconds": 5},
+                ],
+                "scroll": {"top": 2200, "height": 3000, "client": 800, "at_bottom": True},
+                "stats": {"video_tiles": 1},
+            },
+        ]
+        state = {"page": 0}
+        originals = {
+            name: getattr(cleaner, name)
+            for name in (
+                "assert_safe_page_context",
+                "scroll_to_top",
+                "take_snapshot",
+                "get_scroll_state",
+                "scroll_forward",
+            )
+        }
+        original_sleep = cleaner.time.sleep
+        try:
+            cleaner.assert_safe_page_context = lambda driver: None
+            cleaner.scroll_to_top = lambda driver, settle: state.update(page=0)
+            cleaner.take_snapshot = lambda *args, **kwargs: pages[state["page"]]
+            cleaner.get_scroll_state = lambda driver: pages[state["page"]]["scroll"]
+
+            def scroll_forward(driver, current_state, settle):
+                if state["page"] >= len(pages) - 1:
+                    return False
+                state["page"] += 1
+                return True
+
+            cleaner.scroll_forward = scroll_forward
+            cleaner.time.sleep = lambda seconds: None
+            result = cleaner.scan_gallery(
+                object(),
+                cleaner.RuntimeConfig(4, 25, 0, 10, 0.1, 5),
+            )
+        finally:
+            for name, value in originals.items():
+                setattr(cleaner, name, value)
+            cleaner.time.sleep = original_sleep
+
+        self.assertEqual({item.key for item in result.all_videos}, {"A", "B", "C", "D"})
+        self.assertEqual({item.key for item in result.candidates}, {"A", "C"})
+        self.assertEqual(result.videos_without_duration, [])
+        self.assertEqual(result.stopped_reason, "end-of-gallery")
 
 
 class FakeElement:
