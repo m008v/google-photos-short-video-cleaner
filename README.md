@@ -257,7 +257,7 @@ py -m venv .venv
 --threshold 4          Ngưỡng giây, so sánh nghiêm ngặt <
 --delete               Bật chế độ chuyển video vào Thùng rác sau dry-run
 --limit 3              Giới hạn tổng số video xử lý; 0 là không giới hạn
---batch-size 25        Số video mỗi lô, từ 1 đến 100
+--batch-size 100       Số video mỗi lô; mặc định và tối đa là 100
 --output-dir reports   Thư mục lưu báo cáo
 --scroll-settle 0.45   Thời gian chờ lazy-load sau mỗi lần cuộn
 --action-timeout 15    Timeout cho nút xoá và hộp thoại

@@ -64,3 +64,28 @@
 ### Việc còn lại
 
 - Chưa có ảnh chụp màn hình minh hoạ; có thể bổ sung sau nếu giao diện Google Photos ổn định đủ lâu.
+
+## 2026-08-24 — Nâng lô xoá mặc định lên 100 video
+
+### Mục tiêu
+
+- Chọn tối đa 100 video trong mỗi lần chuyển vào Thùng rác thay vì 25.
+
+### Đã thực hiện
+
+- Đổi giá trị mặc định của `--batch-size` từ 25 lên 100.
+- Cập nhật README và thêm unit test khóa giá trị mặc định.
+- Giữ launcher xoá thử ở `--limit 3 --batch-size 3` để bước kiểm tra ban đầu không đổi.
+
+### Quyết định kỹ thuật
+
+- Không thay đổi giới hạn tối đa 100 hoặc các kiểm tra số lượng mục đã chọn trước khi xoá.
+- Launcher xoá toàn bộ tiếp tục dùng giá trị mặc định từ CLI, tránh lặp cấu hình ở nhiều file.
+
+### Kiểm tra
+
+- Chạy unit test, `py_compile`, launcher self-test, kiểm tra diff và mojibake trước khi commit.
+
+### Việc còn lại
+
+- Cần kiểm chứng một lô 100 video trên giao diện Google Photos thật vì DOM và giới hạn phía Google có thể thay đổi.

@@ -42,6 +42,10 @@ class ArgumentTests(unittest.TestCase):
         self.assertTrue(args.delete)
         self.assertEqual(args.threshold, 4)
 
+    def test_default_delete_batch_size_is_100(self):
+        args = cleaner.parse_args(["--delete"])
+        self.assertEqual(args.batch_size, 100)
+
 
 class DedupeTests(unittest.TestCase):
     def test_identity_dedupe(self):

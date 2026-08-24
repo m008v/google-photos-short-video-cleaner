@@ -1292,7 +1292,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--threshold", type=float, default=4.0, help="Ngưỡng giây, so sánh nghiêm ngặt < (mặc định: 4).")
     parser.add_argument("--delete", action="store_true", help="Sau dry-run, cho phép chuyển mục khớp vào Thùng rác.")
     parser.add_argument("--confirm", default="", help=f"Xác nhận không tương tác: phải đúng {CONFIRM_PHRASE}.")
-    parser.add_argument("--batch-size", type=int, default=25, help="Số video tối đa mỗi lô xoá (mặc định: 25, tối đa: 100).")
+    parser.add_argument("--batch-size", type=int, default=100, help="Số video tối đa mỗi lô xoá (mặc định và tối đa: 100).")
     parser.add_argument("--limit", type=int, default=0, help="Giới hạn tổng số video chuyển vào Thùng rác; 0 = theo toàn bộ dry-run.")
     parser.add_argument("--profile-dir", default=str(Path.home() / ".gphotos-short-video-cleaner" / "chrome-profile"))
     parser.add_argument("--debugger-address", default="", help="Gắn vào Chrome đã chạy remote debugging, ví dụ 127.0.0.1:9222.")
