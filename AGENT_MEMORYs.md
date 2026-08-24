@@ -38,3 +38,29 @@
 - Pin action chính thức theo commit: `actions/checkout` v7.0.1 và `actions/setup-python` v7.0.0; CI chỉ có quyền `contents: read`.
 - Tag `vX.Y.Z` sau khi test đạt sẽ đóng gói ZIP, tạo SHA-256 và tạo/cập nhật GitHub Release bằng `gh` với `contents: write` chỉ ở job release.
 - Thêm Dependabot cập nhật GitHub Actions hàng tuần và badge CI/CD trong README.
+
+## 2026-08-24 — Viết lại README cho người dùng cơ bản
+
+### Mục tiêu
+
+- Viết lại hướng dẫn sử dụng theo workflow Windows dễ làm theo và push lên GitHub.
+
+### Đã thực hiện
+
+- Viết lại `README.md` theo thứ tự tải ZIP, cài đặt, quét thử, xoá thử 3 video và xoá toàn bộ.
+- Thêm bảng tiêu chí thời lượng, cảnh báo đồng bộ, xử lý lỗi thường gặp, quyền riêng tư và phần nâng cao có thể thu gọn.
+- Giữ badge CI/CD, lệnh kiểm thử và hướng dẫn phát hành cho maintainer ở cuối tài liệu.
+
+### Quyết định kỹ thuật
+
+- Ưu tiên các file `.bat` làm giao diện chính; lệnh Python được chuyển vào phần nâng cao.
+- Không hướng dẫn bỏ qua dry-run hoặc xác nhận `MOVE_TO_TRASH` vì đây là các lớp bảo vệ dữ liệu.
+
+### Kiểm tra
+
+- Đối chiếu hướng dẫn với các launcher Windows, tham số CLI và workflow CI/CD hiện tại.
+- Kiểm tra Markdown, UTF-8, mojibake và các lệnh kiểm thử trước khi commit.
+
+### Việc còn lại
+
+- Chưa có ảnh chụp màn hình minh hoạ; có thể bổ sung sau nếu giao diện Google Photos ổn định đủ lâu.
